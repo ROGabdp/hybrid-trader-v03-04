@@ -43,6 +43,11 @@ logs/
 cache/
 data/
 
+# Backup Folders
+01 backup_step_test/
+02 backup_active_buy_B1M500K_S500K500K/
+03 backup_active_buy_B1M1M_S500K500K-best/
+
 # Temporary / OS
 *.bak
 *.tmp
