@@ -55,9 +55,8 @@ data/
 .DS_Store
 Thumbs.db
 
-# NOTE: The following directories are INTENTIONALLY KEPT (Not Ignored)
-# models_*/
-# results_*/
-# saved_models_*/
-# tensorboard_logs/
-# Root directory files (*.py, *.csv, *.md, etc)
+# Results & Model Outputs (Large Files)
+results_backtest_*/
+results_hybrid_*/
+saved_models_*/
+tensorboard_logs/
