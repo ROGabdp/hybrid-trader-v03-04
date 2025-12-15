@@ -112,18 +112,22 @@
       📅 每日例行公事
       🌙 盤後（收盤後執行）
       
-      bash
-      python backtest_v4_dca_hybrid_with_filter_fixed_lstm.py --start 2025-01-02
+      # Step 1: 執行回測 (更新持倉到今天)
+      python backtest_v4_dca_hybrid_with_filter_fixed_lstm.py --start 2025-12-09
       
       這會：
       下載最新股價資料
       用固定 LSTM 執行回測
       輸出今日的持倉狀態和操作建議
       更新 open_positions_strat2_*.csv（你的 AI 持倉明細）
+
+      # Step 2: 執行 daily_ops_盤後 (基於最新持倉判斷)
+      python daily_ops_v4_fixed_lstm.py
+      
       
       ☀️ 隔天盤中（開盤後任意時間）
       
-      bash
+      # Step 3: 執行 daily_ops_盤中 (基於最新持倉判斷)
       python daily_ops_v4_intraday_fixed_lstm.py -i
       
       這會：

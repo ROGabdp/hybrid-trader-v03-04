@@ -859,7 +859,7 @@ def main():
     # 使用 Fixed LSTM 計算特徵
     print("  [Compute] 使用 Fixed LSTM 計算特徵...")
     twii_raw = hybrid._load_local_twii_data(start_date="2000-01-01")
-    twii_full_df = hybrid.calculate_features(twii_raw, twii_raw, ticker="^TWII", use_cache=True)
+    twii_full_df = hybrid.calculate_features(twii_raw, twii_raw, ticker="^TWII", use_cache=False)
     
     twii_backtest_df = twii_full_df[twii_full_df.index >= start_date]
     if end_date: twii_backtest_df = twii_backtest_df[twii_backtest_df.index <= end_date]
