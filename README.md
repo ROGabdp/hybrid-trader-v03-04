@@ -72,6 +72,80 @@
 
 - 新增dca回測的輸出和視覺化，方便每日參考AI交易。
 
+- 新增 backtest_v4_dca_hybrid_with_filter_rolling_lstm.py，方便我比較有無濾網的dca + hybrid 的差異 (start 2為主)。
+    指標	        With Filter	No Filter	  差異
+    Total Return	27.37%	    23.44%	    +3.93% 📈
+    Annualized	  29.27%	    25.04%	    +4.23%
+    Max Drawdown	-14.40%	    -19.14%	    +4.74% (風險更低)
+    AI Trades	    13	        27	        交易更少
+    AI Win Rate	  61.5%	      40.7%	      +20.8%
+    DCA 倉	      7	          4	          更多 DCA
+
+    關鍵差異
+    - 濾網版本只在 Donchian 突破 時允許 AI 買入
+    - 減少草率買入 → 勝率更高
+    - Max DD 降低 → 風險更小
+    - DCA 有更多資金可用
+    
+    關鍵結論: 有濾網的比較適合我的交易風格。即便sharp ratio稍微低一點(相較於沒有濾網的 3.19，有濾網的稍低但仍有 2.83)，且總報酬率高，勝率高，總損失小。
+
+
+
+- 🎯 原本建議的操作流程
+    步驟	            工具	                   看什麼
+    1. 盤前	          daily_ops_v4.py	         濾網狀態 + AI 建議
+    2. 確認	          回測 (--start 年初)	     看最新一筆 note 欄位
+    3. 賣出判斷	      回測 CSV	               AI 是否有 -N倉
+    4. 停損	          自己計算	               賣出判斷
+
+    Note: 步驟2補充
+    - # 每天執行 python backtest_v4_dca_hybrid_with_filter_rolling_lstm.py --start 2025-01-02
+    - # 看最新一筆 note 欄位
+        如果 ai_action = BUY 且有 AI+1倉 → 今天應該買
+        如果 ai_action = SELL 且有 AI-N倉 → 今天應該賣 N 倉
+    
+- 分析因為買賣的時間差 (隔天才能動作) 所造成的影響
+  - 結論: 買入延遲影響小（+0.28%），賣出延遲影響稍大但方向對你有利（-0.61%）。唯一要注意的是急跌日的大清倉操作。
+  - 停損觸發：虧損 > 8% 時，不要等訊號，直接賣
+
+- 後續實作了可以讀取 回測持倉狀態 的 盤中daily_ops_v4_intraday_fixed_lstm.py，且採用了固定的LSTM  backtest_v4_dca_hybrid_with_filter_fixed_lstm.py 以確保每日回測的結果一致。因此建議的操作流程簡化如下:
+      📅 每日例行公事
+      🌙 盤後（收盤後執行）
+      
+      bash
+      python backtest_v4_dca_hybrid_with_filter_fixed_lstm.py --start 2025-01-02
+      
+      這會：
+      下載最新股價資料
+      用固定 LSTM 執行回測
+      輸出今日的持倉狀態和操作建議
+      更新 open_positions_strat2_*.csv（你的 AI 持倉明細）
+      
+      ☀️ 隔天盤中（開盤後任意時間）
+      
+      bash
+      python daily_ops_v4_intraday_fixed_lstm.py -i
+      
+      這會：
+      抓取盤中即時價格
+      用相同的固定 LSTM 計算預測
+      顯示每筆 AI 持倉的即時報酬率
+      告訴你今天是否應該買/賣
+
+      Fixed LSTM 盤中腳本保留了完全相同的功能：
+      # 方式 1: 互動式選擇 (用方向鍵)
+      python daily_ops_v4_intraday_fixed_lstm.py -i
+      # 方式 2: 直接指定起始日
+      python daily_ops_v4_intraday_fixed_lstm.py --backtest-start 2025-01-02
+      # 方式 3: 使用最新 (預設)
+      python daily_ops_v4_intraday_fixed_lstm.py
+
+      NOTE: ✅ 已實作！現在 daily_ops_v4_intraday_fixed_lstm.py 會自動匹配對應的 LSTM 模型：選擇哪個 CSV，就會自動載入對應日期的 Fixed LSTM 模型！這樣你可以並行測試不同時期的策略，每個都使用各自最適合的模型。
+
+
+
+    
+
 ## ✨ 核心特色 (Key Features)
 
 | 特色 | 說明 |
