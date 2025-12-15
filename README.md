@@ -206,17 +206,30 @@
 ## 📁 專案結構 (Project Structure)
 
 ```
-hybrid-trader-v02/
+hybrid-trader-v03-04/
 ├── ptrl_hybrid_system.py        # 核心系統 (資料載入/特徵計算/訓練邏輯)
 ├── update_twii_data.py          # 資料更新腳本 (自動抓取最新 TWII 數據)
 ├── twii_data_from_2000_01_01.csv # 本地 TWII 歷史資料庫 (Volume: 億元)
-├── train_v3_models.py           # V3 訓練腳本 (使用本地資料)
-├── train_v4_models.py           # V4 訓練腳本 (使用本地資料)
-├── daily_ops_dual.py            # 每日維運 (盤後)
-├── daily_ops_dual_intraday.py   # 盤中即時分析 (完整 LSTM 訓練+預測)
-├── backtest_v3_no_filter.py     # V3 回測 (使用本地資料)
-├── backtest_v4_no_filter.py     # V4 回測 (使用本地資料)
-└── backtest_v4_dca_hybrid_no_filter.py # DCA 混合回測 (使用本地資料)
+├── train_v3_models.py           # V3 訓練腳本 (Lightweight)
+├── train_v4_models.py           # V4 訓練腳本 (Standard)
+│
+├── # --- 每日維運腳本 ---
+├── daily_ops_v4.py              # 盤後分析 (V4)
+├── daily_ops_v4_intraday.py     # 盤中分析 (Rolling LSTM, 每次重訓)
+├── daily_ops_v4_intraday_fixed_lstm.py  # ⭐ 盤中分析 (Fixed LSTM, 無重訓)
+├── daily_ops_dual.py            # 雙策略比較 (V3+V4)
+│
+├── # --- 回測腳本 ---
+├── backtest_v4_no_filter.py     # V4 無濾網回測
+├── backtest_v4_with_filter.py   # V4 有濾網回測
+├── backtest_v4_dca_hybrid_no_filter.py  # DCA 混合無濾網
+├── backtest_v4_dca_hybrid_with_filter_rolling_lstm.py  # DCA+濾網+Rolling LSTM
+├── backtest_v4_dca_hybrid_with_filter_fixed_lstm.py    # ⭐ DCA+濾網+Fixed LSTM (推薦)
+│
+└── # --- 輸出目錄 ---
+    ├── results_backtest_v4_dca_hybrid_with_filter_fixed_lstm/  # Fixed LSTM 回測結果
+    ├── intraday_runs_v4_fixed/                                  # Fixed LSTM 盤中報告
+    └── saved_models_*/                                          # LSTM 模型儲存
 ```
 
 ## 🛠️ 安裝說明 (Installation)
@@ -296,48 +309,38 @@ python train_lstm_models.py
 
 ### 3. 每日維運 (Daily Operations)
 
-自動化腳本能完成「LSTM 重訓 → 特徵工程 → RL 推論 → 報告生成」全流程。
+自動化腳本能完成「LSTM 載入/訓練 → 特徵工程 → RL 推論 → 報告生成」全流程。
 
-#### 📌 盤後分析 (收盤後執行)
+#### ⭐ 推薦工作流程：Fixed LSTM (結果一致)
 
-- **雙策略比較 (推薦)**: 同時執行 V3 與 V4 模型並產生綜合建議。
-  ```bash
-  python daily_ops_dual.py
-  ```
+使用固定 LSTM 模型，確保回測與盤中分析使用相同模型，結果完全可重現。
 
-- **單策略運行**:
-  ```bash
-  python daily_ops_v3.py  # 僅 V3
-  python daily_ops_v4.py  # 僅 V4
-  ```
-
-**輸出目錄**: `daily_runs/YYYY-MM-DD/`
-
-#### ⏱️ 盤中即時分析 (交易時段內執行)
-
+**Step 1: 盤後執行回測**
 ```bash
-  python daily_ops_v4_intraday.py    # V4 專用 (含 T+20/T+5/T+1 + 目標價)
-  python daily_ops_dual_intraday.py  # 雙策略 (V3+V4) 比較版 
-  ```
-
-**流程說明：**
-1. 從**證交所盤中 API** (`mis.twse.com.tw`) 下載當日即時 OHLC *(2025-12-12 更新)*
-2. 使用 CSV 前 5 日成交量平均作為當日預估成交量
-3. 使用上述資料完整訓練 LSTM 模型 (T+5 及 T+1)
-4. 進行 V3/V4 雙策略推論並輸出報告
-
-**特點：**
-- ✅ **即時資料**：使用證交所 API 取得真正的盤中價格（yfinance 有 15+ 分鐘延遲）
-- ✅ 獨立運作，**不需先執行 daily_ops_dual.py**
-- ✅ **不修改原始 CSV** (使用 CSV 交換策略：備份 → 訓練 → 恢復)
-- ✅ 輸出到獨立資料夾 `intraday_runs/YYYY-MM-DD_HHMMSS/`
-- ⏰ 執行時間約 20-40 分鐘 (LSTM 訓練時間)
-
-**輸出目錄結構：**
+python backtest_v4_dca_hybrid_with_filter_fixed_lstm.py --start 2025-01-02
 ```
-intraday_runs/2025-12-11_120731/
-├── lstm_models/          # 盤中訓練的 LSTM 模型
-├── cache/                # 暫存資料
+- 首次執行：訓練並儲存 `_fixed` 後綴的 LSTM 模型
+- 後續執行：自動使用現有 `_fixed` 模型，無需重訓
+- 輸出：`lstm_info_*.json`、`open_positions_strat2_*.csv`
+
+**Step 2: 盤中即時分析**
+```bash
+python daily_ops_v4_intraday_fixed_lstm.py        # 使用最新回測結果
+python daily_ops_v4_intraday_fixed_lstm.py -i     # 互動選擇回測 CSV
+python daily_ops_v4_intraday_fixed_lstm.py --backtest-start 2025-01-02  # 指定起始日
+```
+- 讀取 `lstm_info_*.json`，載入與回測相同的 LSTM 模型
+- 根據選擇的 CSV 自動匹配對應的 LSTM 模型
+- 顯示每筆 AI 持倉的即時報酬率與停損/停利預測
+
+**輸出目錄**：
+```
+results_backtest_v4_dca_hybrid_with_filter_fixed_lstm/
+├── daily_action_strat2_*.csv     # 每日操作摘要
+├── open_positions_strat2_*.csv   # 未平倉 AI 持倉
+└── lstm_info_*.json              # 使用的 LSTM 模型路徑
+
+intraday_runs_v4_fixed/YYYY-MM-DD_HHMMSS/
 └── reports/
     ├── intraday_summary.txt
     └── intraday_summary.json
@@ -345,12 +348,35 @@ intraday_runs/2025-12-11_120731/
 
 ---
 
-**功能特點 (v2.7)：**
+#### 📌 傳統工作流程 (Rolling LSTM)
+
+每次執行都重新訓練 LSTM，適合需要最新模型的情境。
+
+- **盤後分析**:
+  ```bash
+  python daily_ops_v4.py           # V4 單策略
+  python daily_ops_dual.py         # V3+V4 雙策略比較
+  ```
+
+- **盤中即時分析** (每次重訓 LSTM，約 20-40 分鐘):
+  ```bash
+  python daily_ops_v4_intraday.py    # V4 專用 (含 T+20/T+5/T+1)
+  python daily_ops_dual_intraday.py  # 雙策略比較版 
+  ```
+
+**流程說明：**
+1. 從**證交所盤中 API** (`mis.twse.com.tw`) 下載當日即時 OHLC
+2. 使用 CSV 前 5 日成交量平均作為當日預估成交量
+3. 使用上述資料完整訓練 LSTM 模型 (T+20, T+5, T+1)
+4. 進行 RL 推論並輸出報告
+
+---
+
+**功能特點：**
 - **全時推論模式**: 無論 Donchian 濾網狀態，AI 都會執行預測並顯示意圖
 - **濾網狀態標記**: `BUY`, `WAIT`, `FILTERED (AI: BUY)`, `FILTERED (AI: WAIT)`
 - **情境分析**: Sell Agent 針對三種持倉情境 (成本區/獲利+10%/虧損-5%) 提供建議
-- **數據匯出**: 自動匯出 `raw_data.csv` 和 `processed_features.csv` 供除錯檢查
-- **統一訓練天數**: 三個 daily_ops 腳本均使用 T+20/2400天, T+5/2200天, T+1/2000天 (Rolling Window)
+- **持倉明細**: 顯示每筆 AI 持倉的買入價格、當前報酬率、停損/停利狀態
 - 輸出 JSON 與 TXT 戰情報告
 
 ### 4. 策略回測 (Backtesting)
@@ -369,7 +395,7 @@ python backtest_v4_no_filter.py
 python backtest_v4_with_filter.py
 ```
 
-**✨ 回測系統特色 (v3.1 更新)：**
+**✨ 回測系統特色：**
 
 | 功能 | 說明 |
 |------|------|
@@ -379,34 +405,38 @@ python backtest_v4_with_filter.py
 | **動態檔名** | 輸出檔案自動包含日期範圍，避免覆蓋 |
 | **Benchmark 比較** | 策略績效 vs Buy & Hold 並排顯示 |
 
-**使用範例：**
-```bash
-# 預設日期 (2023-01-01 至今)
-python backtest_v4_with_filter.py
-
-# 自訂完整日期範圍
-python backtest_v4_no_filter.py --start 2015-01-01 --end 2023-12-31
-```
-
 ### 5. DCA + AI 混合策略回測
 
-測試「定期定額 + AI 自由操作」混合策略的績效：
+測試「定期定額 + AI 自由操作」混合策略的績效。
+
+#### ⭐ 推薦：Fixed LSTM 版本 (結果一致)
 
 ```bash
-python backtest_v4_dca_hybrid_no_filter.py
+python backtest_v4_dca_hybrid_with_filter_fixed_lstm.py --start 2025-01-02
+```
+
+- 使用固定 LSTM 模型，每次執行結果完全一致
+- 首次執行訓練並儲存 `_fixed` 模型，後續自動使用
+- 輸出 `lstm_info_*.json` 供盤中腳本讀取
+- 輸出 `open_positions_strat2_*.csv` 記錄 AI 持倉明細
+
+#### Rolling LSTM 版本 (每次重訓)
+
+```bash
+python backtest_v4_dca_hybrid_with_filter_rolling_lstm.py --start 2025-01-02  # 有濾網
+python backtest_v4_dca_hybrid_no_filter.py                                     # 無濾網
 ```
 
 **策略說明：**
 1. **Strategy 1: Split 50/50 (資金對半分配)**
    - 每年年初獲得額度 (External Limit) 60 萬。
    - 額度對半拆分: DCA 30 萬 (每月2.5萬)，AI 30 萬。
-   - **AI All-in**: 當 AI 決定買入時，會投入 **100%** 的可用資金 (Internal Cash + Available Limit)。
-   - 資金注入模式 (Injection Model): 只有在真正買入時，才從額度注入資金，真實反映資本回報率。
+   - **AI All-in**: 當 AI 決定買入時，會投入 **100%** 的可用資金。
 
 2. **Strategy 2: Shared Pool (資金池共享)** - **Recommended**
    - 每年年初獲得 60 萬額度，由 DCA 與 AI 共享。
    - **優先順序**: 每月 DCA (5萬) 優先使用內部現金或額度，剩餘資金供 AI (每次5萬) 使用。
-   - **資金循環**: AI 賣出後資金回流至內部現金池，可供 DCA 或 AI 再次使用 (Releasing Quota)，大幅提升資金利用率。
+   - **資金循環**: AI 賣出後資金回流至內部現金池，可供 DCA 或 AI 再次使用。
 
 **比較基準：**
 1. 純定期定額：每月 5 萬元 (Pure DCA)
@@ -426,17 +456,17 @@ results_backtest_v4_dca_hybrid_no_filter/
 
 ### 🔍 回測腳本功能比較
 
-| 功能 | `backtest_v3_no_filter.py` | `backtest_v4_no_filter.py` | `backtest_v4_dca_hybrid_no_filter.py` |
-|------|:---:|:---:|:---:|
-| 自訂日期範圍 | ✅ | ✅ | ✅ |
-| 動態檔名 | ✅ | ✅ | ✅ |
-| Benchmark 比較 | ✅ | ✅ | ✅ |
-| DCA + AI 混合策略 | ❌ | ❌ | ✅ |
-| **濾網機制** | ❌ | ❌ (Aggressive) / ✅ (Strict) | ❌ |
-| **LSTM 模型日期篩選** | ✅ (v3.0) | ✅ (v3.0) | ✅ |
+| 功能 | `no_filter` | `with_filter` | `dca_hybrid_no_filter` | `dca_hybrid_fixed_lstm` ⭐ |
+|------|:---:|:---:|:---:|:---:|
+| 自訂日期範圍 | ✅ | ✅ | ✅ | ✅ |
+| DCA + AI 混合 | ❌ | ❌ | ✅ | ✅ |
+| Donchian 濾網 | ❌ | ✅ | ❌ | ✅ |
+| **Fixed LSTM** | ❌ | ❌ | ❌ | ✅ |
+| AI 持倉明細輸出 | ❌ | ❌ | ❌ | ✅ |
+| 盤中腳本整合 | ❌ | ❌ | ❌ | ✅ |
 
 > [!IMPORTANT]
-> **LSTM 模型日期篩選 (v3.0 更新)**：所有回測腳本現在都會根據回測 `start_date` 來選擇 LSTM 模型，確保只使用 `train_end < start_date` 的模型，避免資料洩漏 (look-ahead bias)。
+> **推薦使用 Fixed LSTM 版本**：`backtest_v4_dca_hybrid_with_filter_fixed_lstm.py` 可確保回測與盤中分析使用相同 LSTM 模型，結果完全一致。
 
 ## 📈 訓練流程 (Training Pipeline)
 
