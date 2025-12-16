@@ -366,6 +366,13 @@ class DCAHybridBacktester:
         close_prices = df['Close'].values
         dates = df.index
         
+        # 讀取濾網訊號
+        if 'Signal_Buy_Filter' in df.columns:
+            filter_signals = df['Signal_Buy_Filter'].values
+        else:
+            print("[Warning] 找不到 Signal_Buy_Filter 欄位，濾網將失效 (全通過)")
+            filter_signals = np.ones(len(df))
+        
         dca_limit = 0       
         ai_limit = 0        
         dca_shares = 0      
@@ -378,6 +385,7 @@ class DCAHybridBacktester:
         
         print(f"[Strategy 1] Period: {dates[0].strftime('%Y-%m-%d')} ~ {dates[-1].strftime('%Y-%m-%d')}")
         print(f"[Strategy 1] Yearly Limit: ${self.yearly_capital:,.0f} (Split 50/50)")
+        print(f"[Strategy 1] MODE: WITH FILTER (Signal_Buy_Filter)")
         
         for i in range(len(df)):
             date = dates[i]
@@ -437,32 +445,40 @@ class DCAHybridBacktester:
             elif ai_position is None:
                 available_fund = ai_internal_cash + ai_limit
                 buy_conf = 0
+                filter_pass = bool(filter_signals[i])
+                
                 if available_fund >= price:
                     buy_obs = obs.reshape(1, -1)
                     action, _ = self.buy_model.predict(buy_obs, deterministic=True)
                     buy_probs = self.buy_model.policy.get_distribution(self.buy_model.policy.obs_to_tensor(buy_obs)[0]).distribution.probs.detach().cpu().numpy()[0]
                     buy_conf = float(buy_probs[1]) if action[0] == 1 else float(buy_probs[0])
                     
-                    log_entry = {'date': date, 'status': 'idle_check_buy', 'price': price, 'buy_conf': buy_conf, 'sell_conf': 0, 'action': 'wait'}
+                    log_entry = {'date': date, 'status': 'idle_check_buy', 'price': price, 'buy_conf': buy_conf, 'filter_pass': filter_pass, 'sell_conf': 0, 'action': 'wait'}
                     self.daily_confidence.append(log_entry)
 
                     if action[0] == 1:
-                        # 100% Invest
-                        invest_amt = available_fund
-                        used_internal = min(ai_internal_cash, invest_amt)
-                        needed_external = invest_amt - used_internal
-                        
-                        if ai_limit >= needed_external:
-                            log_entry['action'] = 'BUY'
-                            ai_limit -= needed_external
-                            ai_internal_cash += needed_external
-                            self.total_invested += needed_external
+                        # AI 想買 - 檢查濾網
+                        if filter_pass:
+                            # 100% Invest
+                            invest_amt = available_fund
+                            used_internal = min(ai_internal_cash, invest_amt)
+                            needed_external = invest_amt - used_internal
                             
-                            shares = int(invest_amt / price)
-                            cost = shares * price
-                            ai_internal_cash -= cost
-                            ai_position = {'shares': shares, 'buy_price': price, 'buy_idx': i, 'cost': cost}
-                            self.ai_buy_signals.append({'date': date, 'price': price, 'confidence': buy_conf})
+                            if ai_limit >= needed_external:
+                                log_entry['action'] = 'BUY'
+                                ai_limit -= needed_external
+                                ai_internal_cash += needed_external
+                                self.total_invested += needed_external
+                                
+                                shares = int(invest_amt / price)
+                                cost = shares * price
+                                ai_internal_cash -= cost
+                                ai_position = {'shares': shares, 'buy_price': price, 'buy_idx': i, 'cost': cost}
+                                self.ai_buy_signals.append({'date': date, 'price': price, 'confidence': buy_conf})
+                        else:
+                            # AI 想買但被濾網攔截
+                            log_entry['action'] = 'FILTERED'
+
 
             # Value = Assets + Internal Cash
             total_val = (dca_shares * price + dca_internal_cash) + \
